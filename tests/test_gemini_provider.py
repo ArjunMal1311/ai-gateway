@@ -76,3 +76,54 @@ async def test_generate_propagates_sdk_error(provider, monkeypatch):
     ctx = GenerateContext(prompt_text="hi", model="gemini-2.5-flash", api_key="key-aaaa1111")
     with pytest.raises(RuntimeError):
         await provider.generate(ctx)
+
+
+def _upload_client(get_side_effect):
+    client = MagicMock()
+    client.files.upload.return_value = SimpleNamespace(name="files/abc", display_name="clip.mp4")
+    client.files.get.side_effect = get_side_effect
+    return client
+
+
+def test_upload_poll_rides_out_a_429_instead_of_failing(provider, monkeypatch, tmp_path):
+    media = tmp_path / "clip.mp4"
+    media.write_bytes(b"x")
+    client = _upload_client([
+        Exception("429 Too Many Requests"),
+        SimpleNamespace(name="files/abc", state="PROCESSING"),
+        SimpleNamespace(name="files/abc", state="ACTIVE"),
+    ])
+    monkeypatch.setattr("app.providers.gemini.provider.genai.Client", lambda **kwargs: client)
+    monkeypatch.setattr("app.providers.gemini.provider.time.sleep", lambda s: None)
+
+    ref = provider._upload_sync(str(media), "key-1")
+
+    assert ref.name == "files/abc"
+    assert client.files.upload.call_count == 1
+    client.files.delete.assert_not_called()
+
+
+def test_upload_deletes_file_it_gives_up_on(provider, monkeypatch, tmp_path):
+    media = tmp_path / "clip.mp4"
+    media.write_bytes(b"x")
+    client = _upload_client([SimpleNamespace(name="files/abc", state="FAILED")])
+    monkeypatch.setattr("app.providers.gemini.provider.genai.Client", lambda **kwargs: client)
+    monkeypatch.setattr("app.providers.gemini.provider.time.sleep", lambda s: None)
+
+    with pytest.raises(RuntimeError):
+        provider._upload_sync(str(media), "key-1")
+
+    client.files.delete.assert_called_once_with(name="files/abc")
+
+
+def test_upload_poll_non_transient_error_still_raises_and_cleans_up(provider, monkeypatch, tmp_path):
+    media = tmp_path / "clip.mp4"
+    media.write_bytes(b"x")
+    client = _upload_client([Exception("400 API key not valid")])
+    monkeypatch.setattr("app.providers.gemini.provider.genai.Client", lambda **kwargs: client)
+    monkeypatch.setattr("app.providers.gemini.provider.time.sleep", lambda s: None)
+
+    with pytest.raises(Exception, match="API key not valid"):
+        provider._upload_sync(str(media), "key-1")
+
+    client.files.delete.assert_called_once_with(name="files/abc")

@@ -23,6 +23,15 @@ from app.providers.gemini.errors import classify_gemini_error
 
 _UPLOAD_POLL_TIMEOUT_SECONDS = 600
 _UPLOAD_POLL_INTERVAL_SECONDS = 5
+_UPLOAD_POLL_MAX_INTERVAL_SECONDS = 30
+# A 429/5xx on files.get is the File API's own request limit (or a blip), not the model's
+# quota and not a failed upload: the file is already there. Raising on it marked the key
+# rate-limited for the model and re-uploaded the same video under the next key, and the
+# abandoned upload was never deleted (2026-10-15: 307 uploads, 142 poll 429s, 27 generations
+# in 90 min). So the poll backs off and asks again instead.
+_TRANSIENT_POLL_ERROR_RE = re.compile(
+    r"\b(429|500|502|503|504)\b|too many requests|resource has been exhausted|unavailable"
+)
 # Bounds the whole upload_media() call (initial transfer + the ACTIVE-state poll
 # above) — without this, a stalled client.files.upload() HTTP call can hang forever,
 # since (unlike generate()) nothing here previously wrapped it in asyncio.wait_for.
@@ -82,16 +91,33 @@ class GeminiProvider(Provider):
 
         uploaded = client.files.upload(file=media_path, config={"display_name": sanitized_display_name})
 
-        start_time = time.time()
-        while time.time() - start_time < _UPLOAD_POLL_TIMEOUT_SECONDS:
-            file_status = client.files.get(name=uploaded.name)
-            if file_status.state == "ACTIVE":
-                return UploadedMediaRef(name=file_status.name, handle=file_status)
-            if file_status.state == "FAILED":
-                raise RuntimeError(f"Gemini file upload failed for {uploaded.display_name}")
-            time.sleep(_UPLOAD_POLL_INTERVAL_SECONDS)
+        try:
+            start_time = time.time()
+            backoff = _UPLOAD_POLL_INTERVAL_SECONDS
+            while time.time() - start_time < _UPLOAD_POLL_TIMEOUT_SECONDS:
+                try:
+                    file_status = client.files.get(name=uploaded.name)
+                except Exception as exc:
+                    if not _TRANSIENT_POLL_ERROR_RE.search(str(exc).lower()):
+                        raise
+                    backoff = min(backoff * 2, _UPLOAD_POLL_MAX_INTERVAL_SECONDS)
+                    time.sleep(backoff)
+                    continue
+                if file_status.state == "ACTIVE":
+                    return UploadedMediaRef(name=file_status.name, handle=file_status)
+                if file_status.state == "FAILED":
+                    raise RuntimeError(f"Gemini file upload failed for {uploaded.display_name}")
+                time.sleep(_UPLOAD_POLL_INTERVAL_SECONDS)
 
-        raise TimeoutError(f"Gemini file upload timed out waiting for ACTIVE state: {media_path}")
+            raise TimeoutError(f"Gemini file upload timed out waiting for ACTIVE state: {media_path}")
+        except BaseException:
+            # The caller never gets a ref for a file that didn't come back ACTIVE, so nothing
+            # else would ever delete it.
+            try:
+                client.files.delete(name=uploaded.name)
+            except Exception:
+                pass
+            raise
 
     async def upload_media(self, media_path: str, api_key: str) -> Optional[UploadedMediaRef]:
         try:

@@ -23,6 +23,9 @@ gemini:
     - gemini-3-flash-preview
     - gemini-3.5-flash
     - gemini-3.6-flash
+    - gemini-3.7-flash
+    - gemini-3.8-flash
+    - gemini-2.5-flash
     - gemini-3.1-pro-preview
 
   # Resolves a caller-supplied shorthand/alias to the concrete model id used for both the
@@ -45,6 +48,12 @@ gemini:
     gemini-3-flash-preview: {rpm: 5, tpm: 250000, rpd: 20}
     gemini-3.5-flash: {rpm: 5, tpm: 250000, rpd: 20}
     gemini-3.6-flash: {rpm: 5, tpm: 250000, rpd: 20}
+    # Added 2026-10-16 from the AI Studio rate-limit page (all three free at 5 RPM / 20 RPD);
+    # gemini-2.5-flash is back on the free tier, and all three ids are listed by
+    # models.list on a pool key.
+    gemini-3.7-flash: {rpm: 5, tpm: 250000, rpd: 20}
+    gemini-3.8-flash: {rpm: 5, tpm: 250000, rpd: 20}
+    gemini-2.5-flash: {rpm: 5, tpm: 250000, rpd: 20}
     # PLACEHOLDER quota — mirrors gemini-1.5-pro's tighter pro-tier shape (pro models
     # are typically far more rate-limited than flash on the free tier). Not visible on
     # the console's per-model usage page as of 2026-07-23 — verify and correct before
