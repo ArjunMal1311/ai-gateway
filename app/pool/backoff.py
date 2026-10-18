@@ -6,9 +6,13 @@ DEFAULT_BASES = {
     "rate_limit": 30.0,
     "high_demand": 8.0,
 }
-MAX_BACKOFF_SECONDS = 1800.0
+MAX_BACKOFF_SECONDS = 1000.0
 MAX_STREAK = 8
 JITTER_FRACTION = 0.25
+# How long a key+model remembers its last failure after the cooldown ends. The ladder
+# (30 -> 60 -> 120 -> ... -> 1000s) only climbs if the streak outlives the cooldown;
+# when both expired together every 429 restarted at 30s (bug until 2026-10-17).
+STREAK_MEMORY_SECONDS = 3600.0
 
 
 def compute_backoff_seconds(
@@ -31,4 +35,4 @@ def compute_backoff_seconds(
     exponential = base * (2 ** (capped_streak - 1))
     delay = min(exponential, max_backoff_seconds)
     jitter = random.uniform(0.0, delay * jitter_fraction)
-    return delay + jitter
+    return min(delay + jitter, max_backoff_seconds)

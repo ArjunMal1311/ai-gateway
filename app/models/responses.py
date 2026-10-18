@@ -50,3 +50,5 @@ class HealthResponse(BaseModel):
     status: str
     redis_ok: Optional[bool] = None
     keys_configured: Optional[int] = None
+    usable_keys: Optional[int] = None
+    detail: Optional[str] = None

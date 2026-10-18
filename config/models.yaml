@@ -26,7 +26,10 @@ gemini:
     - gemini-3.7-flash
     - gemini-3.8-flash
     - gemini-2.5-flash
-    - gemini-3.1-pro-preview
+    - gemini-2.5-flash-lite
+  # gemini-3.1-pro-preview dropped 2026-10-17: 429 "free_tier_requests, limit: 0" on every
+  # key tested. Probed the same day, also limit 0 on these free keys: gemini-4-argon,
+  # gemini-omni-1.1-flash, gemini-omni-flash-preview, gemini-pro-latest; gemini-2.5-pro is 404.
 
   # Resolves a caller-supplied shorthand/alias to the concrete model id used for both the
   # SDK call and quota lookups.
@@ -35,7 +38,6 @@ gemini:
     gemini-3: gemini-3-flash-preview
     gemini-3.1-flash: gemini-3.1-flash-lite
     gemini-3-flash: gemini-3-flash-preview
-    gemini-3.1-pro: gemini-3.1-pro-preview
     gemini-3.5: gemini-3.5-flash
     gemini-3.6: gemini-3.6-flash
     # Was gemini-2.5-flash (now paid/removed). Mirrors Google's own
@@ -54,6 +56,9 @@ gemini:
     gemini-3.7-flash: {rpm: 5, tpm: 250000, rpd: 20}
     gemini-3.8-flash: {rpm: 5, tpm: 250000, rpd: 20}
     gemini-2.5-flash: {rpm: 5, tpm: 250000, rpd: 20}
+    # Re-added 2026-10-17 (a live call succeeded on a pool key). PLACEHOLDER quota, set
+    # to the tightest flash shape until read from the AI Studio rate-limit page.
+    gemini-2.5-flash-lite: {rpm: 5, tpm: 250000, rpd: 20}
     # PLACEHOLDER quota — mirrors gemini-1.5-pro's tighter pro-tier shape (pro models
     # are typically far more rate-limited than flash on the free tier). Not visible on
     # the console's per-model usage page as of 2026-07-23 — verify and correct before
@@ -63,6 +68,6 @@ gemini:
   backoff:
     rate_limit_base_seconds: 30.0
     high_demand_base_seconds: 8.0
-    max_backoff_seconds: 1800.0
+    max_backoff_seconds: 1000.0
     max_streak: 8
     jitter_fraction: 0.25

@@ -73,3 +73,40 @@ def test_generate_media_file_upload_pins_same_key_for_upload_and_generate(api_cl
     assert resp.status_code == 200
     assert resp.json()["text"] == "described video"
     assert used_keys["upload"] == used_keys["generate"]
+
+
+def test_generate_media_inline_video_500_retries_through_file_api(api_client, monkeypatch):
+    """A video Google can't take inline 500s on every key; the next attempt must upload it."""
+    calls = {"generate": 0, "upload": 0}
+
+    async def fake_requires_upload(self, media_path):
+        return False  # small video -> inline first
+
+    async def fake_upload_media(self, media_path, api_key):
+        calls["upload"] += 1
+        return UploadedMediaRef(name="files/abc123", handle=object())
+
+    async def fake_generate(self, ctx):
+        calls["generate"] += 1
+        if not ctx.extra.get("uploaded_refs"):
+            raise RuntimeError("500 INTERNAL. {'error': {'code': 500, 'message': 'Internal error encountered.'}}")
+        return ProviderResult(text="described video", input_tokens=10, output_tokens=4, total_tokens=14)
+
+    async def fake_delete(self, ref, api_key):
+        return None
+
+    monkeypatch.setattr(GeminiProvider, "requires_file_upload", fake_requires_upload)
+    monkeypatch.setattr(GeminiProvider, "upload_media", fake_upload_media)
+    monkeypatch.setattr(GeminiProvider, "generate", fake_generate)
+    monkeypatch.setattr(GeminiProvider, "delete_uploaded_media", fake_delete)
+
+    fake_video = io.BytesIO(b"\x00\x00\x00\x18ftypmp42fake-video-bytes")
+    resp = api_client.post(
+        "/v1/generate/media",
+        files={"file": ("clip.mp4", fake_video, "video/mp4")},
+        data={"payload": json.dumps({"prompt": "describe this"})},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["text"] == "described video"
+    assert calls == {"generate": 2, "upload": 1}

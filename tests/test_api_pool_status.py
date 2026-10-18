@@ -26,3 +26,28 @@ def test_health_and_ready(api_client):
     body = resp_ready.json()
     assert body["redis_ok"] is True
     assert body["keys_configured"] == 2
+
+
+def test_usage_keys_counts_calls_and_failures_per_key(api_client, monkeypatch):
+    from app.providers.base import ProviderResult
+    from app.providers.gemini.provider import GeminiProvider
+
+    outcomes = iter([Exception("429 Too Many Requests"), None, None])
+
+    async def fake_generate(self, ctx):
+        o = next(outcomes)
+        if o:
+            raise o
+        return ProviderResult(text="ok", input_tokens=1, output_tokens=1, total_tokens=2)
+
+    monkeypatch.setattr(GeminiProvider, "generate", fake_generate)
+    api_client.post("/v1/generate", json={"prompt": "hi"})
+    api_client.post("/v1/generate", json={"prompt": "hi"})
+
+    body = api_client.get("/v1/usage/keys").json()
+    assert len(body["keys"]) == 2
+    assert sum(k["calls"] for k in body["keys"]) == 3
+    assert sum(k["failures"] for k in body["keys"]) == 1
+    hit = [k for k in body["keys"] if k["failures"]][0]
+    assert hit["status"] == "rate_limited"
+    assert all(set(k) >= {"suffix", "status", "calls", "failures", "tokens", "models"} for k in body["keys"])

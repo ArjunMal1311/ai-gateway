@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import math
+import random
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -11,13 +13,17 @@ import redis.asyncio as redis
 
 from app.config import Settings
 from app.models.enums import FailureReason, KeyStatus
-from app.pool.backoff import compute_backoff_seconds
+from app.pool.backoff import STREAK_MEMORY_SECONDS, compute_backoff_seconds
 from app.pool.redis_keys import RedisKeys, key_id, key_suffix
 from app.providers.base import FailureClassification
 from app.tracking import stats
 
 LONG_TERM_THRESHOLD_SECONDS = 3600.0
 _LUA_DIR = Path(__file__).parent / "lua"
+
+
+def _utc_day() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%d")
 
 
 class PoolExhaustedError(Exception):
@@ -160,9 +166,7 @@ class AsyncAPIKeyPool:
             # so a duration-only comparison races the clock and can misclassify a fresh
             # auth-dead key as merely short-cooldown a few milliseconds after it's set.
             global_meta = await self._read_failure_meta(kid)
-            if global_meta.get("reason") == FailureReason.AUTH_DEAD.value or global_remaining >= LONG_TERM_THRESHOLD_SECONDS:
-                return KeyStatus.DEAD_AUTH.value, global_remaining
-            return KeyStatus.SHORT_COOLDOWN.value, global_remaining
+            return self._global_status(global_meta.get("reason"), global_remaining), global_remaining
 
         keymodel_remaining = await self._read_cooldown(self.rk.cooldown_keymodel(kid, model), now)
         if keymodel_remaining > 0:
@@ -189,6 +193,19 @@ class AsyncAPIKeyPool:
                 return KeyStatus.TRACKER_LIMITED.value, wait
 
         return KeyStatus.AVAILABLE.value, 0.0
+
+    @staticmethod
+    def _global_status(reason: Optional[str], remaining: float) -> str:
+        """Status of a key cooled on every model (cooldown_key), from the stored reason."""
+        if reason == FailureReason.AUTH_DEAD.value:
+            return KeyStatus.DEAD_AUTH.value
+        if reason == FailureReason.QUOTA_EXHAUSTED.value:
+            return KeyStatus.DEAD_QUOTA.value
+        if remaining >= LONG_TERM_THRESHOLD_SECONDS:
+            return KeyStatus.DEAD_AUTH.value
+        if reason == FailureReason.RATE_LIMIT.value:
+            return KeyStatus.RATE_LIMITED.value
+        return KeyStatus.SHORT_COOLDOWN.value
 
     async def _classify_keys_batch(
         self,
@@ -245,10 +262,7 @@ class AsyncAPIKeyPool:
                 still_active.append(kid)
                 continue
             meta = global_meta_by_kid.get(kid, {})
-            if meta.get("reason") == FailureReason.AUTH_DEAD.value or remaining >= LONG_TERM_THRESHOLD_SECONDS:
-                result[kid] = (KeyStatus.DEAD_AUTH.value, remaining)
-            else:
-                result[kid] = (KeyStatus.SHORT_COOLDOWN.value, remaining)
+            result[kid] = (self._global_status(meta.get("reason"), remaining), remaining)
 
         if not still_active:
             return result
@@ -457,13 +471,24 @@ class AsyncAPIKeyPool:
                             model_retry_times.append(60.0)
 
                 if available_keys:
-                    usage_counts = await asyncio.gather(
-                        *(self.redis.get(self.rk.usage_key(key_id(k))) for k in available_keys)
+                    # Least used on this model today, ties broken at random. A lifetime
+                    # counter across all models sent nearly every call to newly added
+                    # keys until they caught up (2026-10-17: ~550 calls each to 10 new keys).
+                    random.shuffle(available_keys)
+                    usage_counts = await self._batch_get(
+                        [self.rk.usage_rpd(key_id(k), model_to_use, _utc_day()) for k in available_keys]
                     )
                     counts = [int(c) if c else 0 for c in usage_counts]
                     selected_key = min(zip(available_keys, counts), key=lambda pair: pair[1])[0]
                     selected_model = model_to_use
                     break
+
+                if long_term_count >= len(unleased_keys) and len(unleased_keys) < len(self.api_keys):
+                    # Every free key is dead but some keys are only busy (leased): wait for
+                    # a lease. Blacklisting here took all 9 models down for an hour on a
+                    # 16-call burst with 13 healthy keys (2026-10-17).
+                    best_wait = 1.0 if best_wait is None else min(best_wait, 1.0)
+                    continue
 
                 if long_term_count >= len(unleased_keys):
                     already_blacklisted = await self.redis.exists(self.rk.cooldown_model(model_to_use))
@@ -501,6 +526,9 @@ class AsyncAPIKeyPool:
                     continue
 
                 await self.redis.incr(self.rk.usage_key(kid))
+                day_key = self.rk.usage_rpd(kid, selected_model, _utc_day())
+                await self.redis.incr(day_key)
+                await self.redis.expire(day_key, 2 * 86400)
 
                 async with self._tokens_lock:
                     self._active_tokens[kid] = (token, selected_model)
@@ -575,6 +603,17 @@ class AsyncAPIKeyPool:
         kid = key_id(api_key)
         await self.redis.delete(self.rk.failure_meta(kid, model))
         await self.redis.delete(self.rk.cooldown_keymodel(kid, model))
+        key_meta = await self._read_failure_meta(kid)
+        if key_meta.get("reason") == FailureReason.RATE_LIMIT.value:
+            await self.redis.delete(self.rk.failure_meta(kid))
+
+    def _ladder_seconds(self, classification: FailureClassification, streak: int) -> float:
+        """30 -> 60 -> 120 -> ... -> 1000s by streak, never shorter than the retryDelay
+        Google sent with the 429."""
+        backoff = compute_backoff_seconds(classification.reason.value, streak)
+        if classification.cooldown_seconds is not None:
+            backoff = max(backoff, classification.cooldown_seconds)
+        return self._clamped(backoff)
 
     async def _get_failure_streak(self, kid: str, model: str, failure_type: str) -> int:
         meta = await self._read_failure_meta(kid, model)
@@ -604,6 +643,11 @@ class AsyncAPIKeyPool:
 
         if classification.reason == FailureReason.AUTH_DEAD:
             await self.mark_cooldown(api_key, self.settings.dead_cooldown_seconds, FailureReason.AUTH_DEAD.value)
+            return
+
+        if classification.reason == FailureReason.QUOTA_EXHAUSTED and classification.scope == "key":
+            # Project-wide limit of 0 (or a project-wide daily cap): no model on this key works.
+            await self.mark_cooldown(api_key, self.settings.dead_cooldown_seconds, FailureReason.QUOTA_EXHAUSTED.value)
             return
 
         if classification.reason == FailureReason.QUOTA_EXHAUSTED:
@@ -645,13 +689,17 @@ class AsyncAPIKeyPool:
             return
 
         if classification.reason in (FailureReason.RATE_LIMIT, FailureReason.HIGH_DEMAND):
+            if classification.scope == "key":
+                # Project-wide per-minute limit: cool the key on every model. Not counted
+                # toward the model breaker, since the model itself isn't saturated.
+                streak = await self._get_failure_streak(kid, "", classification.reason.value)
+                backoff = self._ladder_seconds(classification, streak)
+                await self.redis.set(self.rk.cooldown_key(kid), now + backoff, ex=max(1, math.ceil(backoff)))
+                await self._set_failure_meta(kid, "", classification.reason.value, backoff, streak)
+                return
+
             streak = await self._get_failure_streak(kid, model, classification.reason.value)
-            backoff = (
-                classification.cooldown_seconds
-                if classification.cooldown_seconds is not None
-                else compute_backoff_seconds(classification.reason.value, streak)
-            )
-            backoff = self._clamped(backoff)
+            backoff = self._ladder_seconds(classification, streak)
             await self.redis.set(
                 self.rk.cooldown_keymodel(kid, model), now + backoff, ex=max(1, math.ceil(backoff))
             )
@@ -702,4 +750,5 @@ class AsyncAPIKeyPool:
                 "updated_at": now,
             },
         )
-        await self.redis.expire(self.rk.failure_meta(kid, model), max(1, math.ceil(cooldown_seconds)))
+        memory = max(cooldown_seconds, STREAK_MEMORY_SECONDS)
+        await self.redis.expire(self.rk.failure_meta(kid, model), max(1, math.ceil(memory)))

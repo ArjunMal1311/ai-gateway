@@ -24,6 +24,11 @@ from app.providers.gemini.errors import classify_gemini_error
 _UPLOAD_POLL_TIMEOUT_SECONDS = 600
 _UPLOAD_POLL_INTERVAL_SECONDS = 5
 _UPLOAD_POLL_MAX_INTERVAL_SECONDS = 30
+# A video up to this size goes inline in the request and never touches the File API, whose
+# status poll 429s far more than generateContent does (2026-10-16: 119 of 142 polls in 22 min).
+# Three in four reels are under it. 14 MB raw is ~19 MB base64, under the 20 MB inline cap.
+_INLINE_VIDEO_MAX_BYTES = 14 * 1024 * 1024
+_INLINE_OTHER_MAX_BYTES = 10 * 1024 * 1024
 # A 429/5xx on files.get is the File API's own request limit (or a blip), not the model's
 # quota and not a failed upload: the file is already there. Raising on it marked the key
 # rate-limited for the model and re-uploaded the same video under the next key, and the
@@ -69,7 +74,10 @@ class GeminiProvider(Provider):
 
     async def requires_file_upload(self, media_path: str) -> bool:
         mime_type = mimetypes.guess_type(media_path)[0] or ""
-        return "video" in mime_type or os.path.getsize(media_path) > 10 * 1024 * 1024
+        size = os.path.getsize(media_path)
+        if "video" in mime_type:
+            return size > _INLINE_VIDEO_MAX_BYTES
+        return size > _INLINE_OTHER_MAX_BYTES
 
     def _get_client(self, api_key: str) -> genai.Client:
         client = self._clients.get(api_key)
@@ -144,7 +152,7 @@ class GeminiProvider(Provider):
 
     def _create_inline_media_part(self, media_path: str):
         mime_type = mimetypes.guess_type(media_path)[0] or "application/octet-stream"
-        if not mime_type.startswith("image/") and not mime_type.startswith("audio/"):
+        if not mime_type.startswith(("image/", "audio/", "video/")):
             return None
         with open(media_path, "rb") as f:
             data = f.read()

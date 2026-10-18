@@ -11,7 +11,9 @@ import redis.asyncio as redis
 from app.pool.redis_keys import RedisKeys
 from app.tracking import stats
 
-RPD_TTL_SECONDS = 2 * 24 * 3600
+# Per-key daily counters are kept 35 days so /v1/usage/keys can audit past days
+# (was 2; quota checks only ever read today's key, so keeping more is harmless).
+RPD_TTL_SECONDS = 35 * 24 * 3600
 
 
 class CallTracker:

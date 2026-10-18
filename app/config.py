@@ -45,6 +45,18 @@ class Settings(BaseSettings):
     model_circuit_breaker_window_seconds: float = 30.0
     model_circuit_breaker_cooldown_seconds: float = 20.0
 
+    # A 429/503 means the provider is throttling, not that this one key is bad. Hopping
+    # across the whole pool (one attempt per key, up to pool_size + 5) just sends the
+    # same overload N more times. After this many throttled attempts in one request the
+    # gateway stops and answers 429 + retry_after so the caller backs off.
+    max_throttled_attempts_per_request: int = 3
+    # An error the classifier doesn't recognise (no cooldown) used to be retried on up to
+    # pool_size + 5 keys per request: the unclassified service-account 401 took ~5,400
+    # calls on 2026-10-17. Three keys failing the same unknown way is enough to give up.
+    max_unknown_attempts_per_request: int = 3
+    # /health/ready says "degraded" below this many keys that aren't dead.
+    min_usable_keys: int = 3
+
     models_config_path: str = "config/models.yaml"
 
     log_dir: str = "tmp/ai/logs"

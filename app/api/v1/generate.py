@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import mimetypes
 import shutil
 import time
 import uuid
@@ -194,6 +195,9 @@ async def run_generate(
     # Job workers pass a wider deadline_seconds (no HTTP client is waiting there).
     deadline = start_time + (deadline_seconds or settings.request_deadline_seconds)
 
+    throttled_attempts = 0
+    unknown_attempts = 0
+
     try:
         for attempt in range(max_retries):
             leased_key: Optional[str] = None
@@ -384,6 +388,9 @@ async def run_generate(
                     uploaded_refs = {}
                     uploaded_ref_key = None
                 elif classification.reason in (FailureReason.RATE_LIMIT, FailureReason.HIGH_DEMAND):
+                    throttled_attempts += 1
+                    if throttled_attempts >= settings.max_throttled_attempts_per_request:
+                        await _raise_pool_error(pool, request_id, provider.name)
                     if attempt < max_retries - 1:
                         await asyncio.sleep(1)
                     if any_requires_upload and uploaded_refs:
@@ -392,8 +399,22 @@ async def run_generate(
                                 await provider.delete_uploaded_media(ref, uploaded_ref_key)
                         uploaded_refs = {}
                         uploaded_ref_key = None
+                elif classification.reason == FailureReason.UNKNOWN:
+                    unknown_attempts += 1
 
-                if attempt >= max_retries - 1:
+                if message.startswith("500 "):
+                    # A video Google can't take inline comes back 500 on every key (2026-10-16:
+                    # one reel failed six times in a row inline), so from the next attempt on
+                    # the inline videos go through the File API instead.
+                    inline_videos = [
+                        p for p in paths
+                        if not requires_upload_by_path[p] and (mimetypes.guess_type(p)[0] or "").startswith("video/")
+                    ]
+                    for p in inline_videos:
+                        requires_upload_by_path[p] = True
+                    any_requires_upload = any_requires_upload or bool(inline_videos)
+
+                if attempt >= max_retries - 1 or unknown_attempts >= settings.max_unknown_attempts_per_request:
                     raise
                 continue
             finally:
