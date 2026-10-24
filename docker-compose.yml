@@ -20,6 +20,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       GEMINI_API_KEYS: ${GEMINI_API_KEYS:-}
+      GROQ_API_KEYS: ${GROQ_API_KEYS:-}
+      CEREBRAS_API_KEYS: ${CEREBRAS_API_KEYS:-}
+      MISTRAL_API_KEYS: ${MISTRAL_API_KEYS:-}
       # Clean slate across restarts: never resume batch work after a container stop.
       # on_startup is the one that also covers hard kills (exit 137), where the
       # shutdown hook never runs.

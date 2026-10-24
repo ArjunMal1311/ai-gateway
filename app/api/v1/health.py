@@ -29,6 +29,9 @@ async def health_ready(request: Request, response: Response) -> HealthResponse:
     usable_keys = 0
     no_model = []
     for name, pool in pools.items():
+        # A provider with no keys is simply not enabled; it shouldn't degrade readiness.
+        if pool.size() == 0:
+            continue
         if await pool.get_available_model() is None:
             no_model.append(name)
             continue

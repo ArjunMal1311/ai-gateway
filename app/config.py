@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     gemini_api_keys: str = ""
+    # Comma-separated, same format as GEMINI_API_KEYS. An empty value leaves that provider
+    # registered with a zero-key pool (requests get the normal pool-exhausted 429).
+    groq_api_keys: str = ""
+    cerebras_api_keys: str = ""
+    mistral_api_keys: str = ""
 
     redis_url: str = "redis://localhost:6379/0"
     redis_key_prefix: str = "aiservice"

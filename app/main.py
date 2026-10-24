@@ -69,10 +69,14 @@ async def lifespan(app: FastAPI):
     trackers: dict[str, CallTracker] = {}
     rate_limiters: dict[str, RateLimiter] = {}
 
-    # v1: only "gemini" is wired to an env var of keys. A future provider adds its own
-    # keys env var + registration line here (ProviderRegistry already loads its config
-    # from models.yaml automatically).
-    provider_key_sources = {"gemini": settings.gemini_api_keys}
+    # Each provider adds its own keys env var + registration line here (ProviderRegistry
+    # already loads its config from models.yaml automatically).
+    provider_key_sources = {
+        "gemini": settings.gemini_api_keys,
+        "groq": settings.groq_api_keys,
+        "cerebras": settings.cerebras_api_keys,
+        "mistral": settings.mistral_api_keys,
+    }
 
     for name in registry.names():
         provider = registry.get(name)
@@ -141,6 +145,10 @@ async def lifespan(app: FastAPI):
     if settings.jobs_purge_queue_on_shutdown:
         await _purge_queue(job_store, "shutdown")
     await close_redis()
+    for name in registry.names():
+        aclose = getattr(registry.get(name), "aclose", None)
+        if aclose:
+            await aclose()
     blocking_executor.shutdown(wait=True)
 
 

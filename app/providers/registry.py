@@ -7,9 +7,14 @@ import yaml
 
 from app.providers.base import Provider
 from app.providers.gemini.provider import GeminiProvider
+from app.providers.openai_compat.provider import OpenAICompatProvider
+from app.providers.openai_compat.vendors import CerebrasProvider, GroqProvider, MistralProvider
 
 _BUILDERS = {
     "gemini": GeminiProvider,
+    "groq": GroqProvider,
+    "cerebras": CerebrasProvider,
+    "mistral": MistralProvider,
 }
 
 
@@ -36,10 +41,14 @@ class ProviderRegistry:
             builder = _BUILDERS.get(provider_name)
             if builder is None:
                 continue
+            kwargs = {}
+            if issubclass(builder, OpenAICompatProvider):
+                kwargs["vision_models"] = section.get("vision_models", [])
             self._providers[provider_name] = builder(
                 model_priority=section.get("model_priority", []),
                 model_aliases=section.get("model_aliases", {}),
                 quota_table=section.get("quota_table", {}),
+                **kwargs,
             )
 
     def get(self, name: str) -> Optional[Provider]:

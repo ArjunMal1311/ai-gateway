@@ -71,3 +71,63 @@ gemini:
     max_backoff_seconds: 1000.0
     max_streak: 8
     jitter_fraction: 0.25
+
+# ---- OpenAI-compatible providers (text + images only; no video/audio) ----
+# Added 2026-10-24. Model ids and free-tier quota numbers are from each vendor's public
+# docs as remembered, NOT yet verified against a live key — check the console rate-limit
+# page and run one real call per model before relying on them (same lesson as the Gemini
+# table above). `vision_models` lists the models that accept image input; an image sent to
+# any other model is refused before the HTTP call. Video/audio is always refused, so
+# Instagram-style video jobs must keep using provider "gemini".
+
+groq:
+  model_priority:
+    - openai/gpt-oss-120b
+    - openai/gpt-oss-20b
+    - llama-3.3-70b-versatile
+    - meta-llama/llama-4-scout-17b-16e-instruct
+    - llama-3.1-8b-instant
+  vision_models:
+    - meta-llama/llama-4-scout-17b-16e-instruct
+  model_aliases:
+    gpt-oss-120b: openai/gpt-oss-120b
+    gpt-oss-20b: openai/gpt-oss-20b
+    llama-4-scout: meta-llama/llama-4-scout-17b-16e-instruct
+  quota_table:
+    openai/gpt-oss-120b: {rpm: 30, tpm: 8000, rpd: 1000}
+    openai/gpt-oss-20b: {rpm: 30, tpm: 8000, rpd: 1000}
+    llama-3.3-70b-versatile: {rpm: 30, tpm: 12000, rpd: 1000}
+    meta-llama/llama-4-scout-17b-16e-instruct: {rpm: 30, tpm: 30000, rpd: 1000}
+    llama-3.1-8b-instant: {rpm: 30, tpm: 6000, rpd: 14400}
+
+cerebras:
+  model_priority:
+    - gpt-oss-120b
+    - qwen-3-235b-a22b-instruct-2507
+    - llama3.1-8b
+  model_aliases:
+    qwen-3-235b: qwen-3-235b-a22b-instruct-2507
+  quota_table:
+    gpt-oss-120b: {rpm: 30, tpm: 60000, rpd: 14400}
+    qwen-3-235b-a22b-instruct-2507: {rpm: 30, tpm: 60000, rpd: 14400}
+    llama3.1-8b: {rpm: 30, tpm: 60000, rpd: 14400}
+
+mistral:
+  model_priority:
+    - mistral-small-latest
+    - mistral-medium-latest
+    - mistral-large-latest
+  vision_models:
+    - mistral-small-latest
+    - mistral-medium-latest
+    - mistral-large-latest
+  model_aliases:
+    mistral-small: mistral-small-latest
+    mistral-medium: mistral-medium-latest
+    mistral-large: mistral-large-latest
+  # Experiment (free) plan is limited per-minute and by a big monthly token budget, not
+  # per-day, hence rpd -1.
+  quota_table:
+    mistral-small-latest: {rpm: 2, tpm: 500000, rpd: -1}
+    mistral-medium-latest: {rpm: 2, tpm: 500000, rpd: -1}
+    mistral-large-latest: {rpm: 2, tpm: 500000, rpd: -1}
