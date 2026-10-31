@@ -13,7 +13,9 @@ from app.providers.openai_compat.vendors import (
     CloudflareProvider,
     GroqProvider,
     MistralProvider,
+    NvidiaProvider,
     OpenRouterProvider,
+    ZaiProvider,
 )
 
 _BUILDERS = {
@@ -23,6 +25,8 @@ _BUILDERS = {
     "mistral": MistralProvider,
     "openrouter": OpenRouterProvider,
     "cloudflare": CloudflareProvider,
+    "nvidia": NvidiaProvider,
+    "zai": ZaiProvider,
 }
 
 

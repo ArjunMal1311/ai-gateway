@@ -145,6 +145,66 @@ openrouter:
   quota_table:
     openrouter/free: {rpm: 20, tpm: -1, rpd: 50}
 
+# NVIDIA NIM (build.nvidia.com), added 2026-10-31. Free dev tier is ~40 RPM per account
+# with no published daily cap (unverified; credit-based and can change). Model ids below
+# each returned a real 200 completion on a live key on 2026-10-31. The /v1/models catalog
+# lists ~85 ids but many 404 per-account ("Function ... Not found for account"):
+# nemotron-3-super-120b-a12b, kimi-k2.6 and cosmos-reason2-8b did. deepseek-v4.1-flash and
+# glm-5.3-flash timed out at 60s and are untested, as are llama-3.2-90b-vision-instruct and
+# gemma-4-31b-it. Latency varies a lot on the free tier (gpt-oss-20b took ~44s for "pong").
+# The two nemotron VL/omni models also accepted a small base64 video directly against the
+# NVIDIA API, but this gateway still refuses video for every OpenAI-compatible provider.
+nvidia:
+  # Ordered fastest-first from live "pong" probes on 2026-10-31 (seconds in brackets).
+  # Also returned 200 but left out as too slow/low value: meta/muse-glimmer-30b [85s],
+  # poolside/laguna-xs-2.1 [19s]. Per-account 404s and 100s timeouts: see note above.
+  model_priority:
+    - nvidia/nemotron-3.5-bolt-e4b                   # [1.1s]
+    - nvidia/nemotron-3-ultra-550b-a55b              # [1.4s]
+    - nvidia/nemotron-3.5-lightning-30b-a3b          # [3.3s]
+    - nvidia/nemotron-3.5-super-vl-120b-a12b         # [6.8s] vision/video-capable
+    - nvidia/nemotron-3-nano-omni-30b-a3b-reasoning  # [8.5s] vision/video-capable
+    - mistralai/mistral-large-4-1t-a52b              # [12s]
+    - openai/gpt-oss-20b                             # [44s]
+  vision_models:
+    - nvidia/nemotron-3.5-super-vl-120b-a12b
+    - nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+  model_aliases:
+    nemotron-bolt: nvidia/nemotron-3.5-bolt-e4b
+    nemotron-ultra: nvidia/nemotron-3-ultra-550b-a55b
+    nemotron-lightning: nvidia/nemotron-3.5-lightning-30b-a3b
+    nemotron-vl: nvidia/nemotron-3.5-super-vl-120b-a12b
+    nemotron-omni: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+    mistral-large-4: mistralai/mistral-large-4-1t-a52b
+    gpt-oss-20b: openai/gpt-oss-20b
+  quota_table:
+    nvidia/nemotron-3.5-bolt-e4b: {rpm: 40, tpm: -1, rpd: -1}
+    nvidia/nemotron-3-ultra-550b-a55b: {rpm: 40, tpm: -1, rpd: -1}
+    nvidia/nemotron-3.5-lightning-30b-a3b: {rpm: 40, tpm: -1, rpd: -1}
+    nvidia/nemotron-3.5-super-vl-120b-a12b: {rpm: 40, tpm: -1, rpd: -1}
+    nvidia/nemotron-3-nano-omni-30b-a3b-reasoning: {rpm: 40, tpm: -1, rpd: -1}
+    mistralai/mistral-large-4-1t-a52b: {rpm: 40, tpm: -1, rpd: -1}
+    openai/gpt-oss-20b: {rpm: 40, tpm: -1, rpd: -1}
+
+# Z.ai (api.z.ai, international Zhipu), added 2026-10-31. Key env var: Z_AI_API_KEYS.
+# Only the free "flash" ids work without paid balance; every other id /models lists
+# (glm-4.5/4.6/4.7, glm-5.x incl. glm-5.3-flash) returned 429 code 1113 "Insufficient
+# balance" on a live free key, so they're deliberately left out. glm-4.7-flash returned
+# 429 code 1305 "overloaded" at probe time — free, just busy, so it's kept last.
+# Free-tier rate limits are not published per model; the numbers below are a guess.
+zai:
+  model_priority:
+    - glm-4.6v-flash   # [2.4s] vision-capable (text-only verified)
+    - glm-4.5-flash    # [5.8s]
+    - glm-4.7-flash    # overloaded at probe time
+  vision_models:
+    - glm-4.6v-flash
+  model_aliases: {}
+  quota_table:
+    glm-4.6v-flash: {rpm: 10, tpm: -1, rpd: -1}
+    glm-4.5-flash: {rpm: 10, tpm: -1, rpd: -1}
+    glm-4.7-flash: {rpm: 10, tpm: -1, rpd: -1}
+
 cloudflare:
   model_priority:
     - '@cf/google/gemma-4-26b-a4b-it'

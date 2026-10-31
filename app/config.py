@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     openrouter_api_keys: str = ""
     cloudflare_api_keys: str = ""
     cloudflare_account_id: str = ""
+    nvidia_api_keys: str = ""
+    z_ai_api_keys: str = ""  # env var Z_AI_API_KEYS
 
     redis_url: str = "redis://localhost:6379/0"
     redis_key_prefix: str = "aiservice"

@@ -77,6 +77,11 @@ def _make_api_client(monkeypatch, tmp_path, extra_env: dict[str, str] | None = N
     from fastapi.testclient import TestClient
 
     monkeypatch.setenv("GEMINI_API_KEYS", "key-aaaa1111,key-bbbb2222")
+    # Blank every other provider's keys: Settings also reads the real .env, so a dev's
+    # actual keys would otherwise leak in and change key counts / readiness results.
+    for var in ("GROQ_API_KEYS", "CEREBRAS_API_KEYS", "MISTRAL_API_KEYS", "OPENROUTER_API_KEYS",
+                "CLOUDFLARE_API_KEYS", "CLOUDFLARE_ACCOUNT_ID", "NVIDIA_API_KEYS", "Z_AI_API_KEYS"):
+        monkeypatch.setenv(var, "")
     monkeypatch.setenv("ACQUIRE_KEY_MAX_WAIT_SECONDS", "1.0")
     monkeypatch.setenv("LOG_DIR", str(tmp_path / "logs"))
     monkeypatch.setenv("UPLOADS_DIR", str(tmp_path / "uploads"))

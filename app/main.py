@@ -83,6 +83,8 @@ async def lifespan(app: FastAPI):
         "mistral": settings.mistral_api_keys,
         "openrouter": settings.openrouter_api_keys,
         "cloudflare": settings.cloudflare_api_keys,
+        "nvidia": settings.nvidia_api_keys,
+        "zai": settings.z_ai_api_keys,
     }
 
     for name in registry.names():

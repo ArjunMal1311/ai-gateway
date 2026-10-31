@@ -25,6 +25,16 @@ class OpenRouterProvider(OpenAICompatProvider):
     base_url = "https://openrouter.ai/api/v1"
 
 
+class NvidiaProvider(OpenAICompatProvider):
+    name = "nvidia"
+    base_url = "https://integrate.api.nvidia.com/v1"
+
+
+class ZaiProvider(OpenAICompatProvider):
+    name = "zai"
+    base_url = "https://api.z.ai/api/paas/v4"
+
+
 class CloudflareProvider(OpenAICompatProvider):
     name = "cloudflare"
 

@@ -26,12 +26,15 @@ class UnsupportedMediaError(ValueError):
 
 
 _AUTH_RE = re.compile(r"\bhttp (401|403)\b|invalid api key|invalid_api_key|unauthorized")
-_NOT_FOUND_RE = re.compile(r"\bhttp 404\b|model_not_found|does not exist|model .* not found")
+_NOT_FOUND_RE = re.compile(r"\bhttp 404\b|model_not_found|does not exist|model .* not found|unknown model")
 _IS_429_RE = re.compile(r"\bhttp 429\b|rate.?limit|too_many_requests|too many requests")
 # Daily budgets (Groq "tokens per day (TPD)" / "requests per day (RPD)", Cerebras
 # "token_quota_exceeded") don't recover in minutes: park the key for the hour cap instead of
-# re-trying every backoff step.
-_DAILY_RE = re.compile(r"per day|\btpd\b|\brpd\b|daily|token_quota_exceeded|quota_exceeded")
+# re-trying every backoff step. Z.ai sends "paid model, no balance" as a 429 too (code 1113,
+# "Insufficient balance or no resource package. Please recharge.") — that never recovers.
+_DAILY_RE = re.compile(
+    r"per day|\btpd\b|\brpd\b|daily|token_quota_exceeded|quota_exceeded|insufficient balance|recharge"
+)
 _HIGH_DEMAND_RE = re.compile(
     r"\bhttp (500|502|503|504)\b|overloaded|over capacity|unavailable|queue_exceeded|try again later"
 )
