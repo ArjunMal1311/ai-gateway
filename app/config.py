@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     groq_api_keys: str = ""
     cerebras_api_keys: str = ""
     mistral_api_keys: str = ""
+    openrouter_api_keys: str = ""
+    cloudflare_api_keys: str = ""
+    cloudflare_account_id: str = ""
 
     redis_url: str = "redis://localhost:6379/0"
     redis_key_prefix: str = "aiservice"

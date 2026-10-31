@@ -5,13 +5,12 @@
 
 Standalone LLM gateway microservice: multi-key pool, parallel-worker-safe rate limiting,
 per-key cooldown/backoff tracking, and usage logging — over HTTP, so any repo can call it
-instead of vendoring the pool/backoff logic locally. Provider-agnostic by design — Gemini
-is the first implementation, not the only one.
+instead of vendoring the pool/backoff logic locally. Provider-agnostic by design, with
+Gemini, Groq, Cerebras, Mistral, OpenRouter, and Cloudflare Workers AI supported.
 
 Originally extracted from `services/support/ai/` in the `socials-instagram` repo, where
-this logic was duplicated across projects. v1 ships one concrete `Provider` (Gemini)
-behind a pluggable interface so other LLM providers (Anthropic, etc.) can be added later
-without redesigning the pool/tracking layer.
+this logic was duplicated across projects. Providers have independent keys and quota
+tracking; requests select a provider through the `provider` field.
 
 ## Architecture
 
@@ -74,6 +73,12 @@ docker compose up --build
 | Variable | Default | Notes |
 |---|---|---|
 | `GEMINI_API_KEYS` | *(required)* | Comma-separated Gemini API keys. **This is the only canonical env var name** — the source repo had a confusing `GEMINI_API`/`GEMINI_API_KEY` split; do not reintroduce that here. |
+| `GROQ_API_KEYS` | *(empty)* | Optional comma-separated Groq API keys. |
+| `CEREBRAS_API_KEYS` | *(empty)* | Optional comma-separated Cerebras API keys. |
+| `MISTRAL_API_KEYS` | *(empty)* | Optional comma-separated Mistral API keys. |
+| `OPENROUTER_API_KEYS` | *(empty)* | Optional OpenRouter key for its free-model router. Free tier currently allows 50 requests/day. |
+| `CLOUDFLARE_API_KEYS` | *(empty)* | Optional Cloudflare API tokens for Workers AI. |
+| `CLOUDFLARE_ACCOUNT_ID` | *(empty)* | Cloudflare account ID required when using Workers AI. |
 | `REDIS_URL` | `redis://localhost:6379/0` | Shared pool/quota state. |
 | `REDIS_KEY_PREFIX` | `aiservice` | Namespace prefix for all Redis keys this service writes. |
 | `REDIS_MAX_CONNECTIONS` | `200` | Client-side connection pool cap for the shared Redis client. redis-py defaults this to 100 when unset, which this service's fan-out (`acquire_key()` gathers a `leased:*` check per configured key, per candidate model, times `JOBS_WORKER_CONCURRENCY` parallel workers) can exceed under load, raising `MaxConnectionsError`. Raise further for very large key pools or worker concurrency. |
@@ -401,6 +406,16 @@ and wire its API key env var in `app/main.py`'s `provider_key_sources`. Nothing 
 needs to change — the pool, tracker, rate limiter, and all `/v1/*` endpoints are
 provider-agnostic.
 
+### Configured providers and routing
+
+`POST /v1/generate` and batch jobs accept `provider` values `gemini`, `groq`,
+`cerebras`, `mistral`, `openrouter`, and `cloudflare`. Free options include OpenRouter's
+dynamic `openrouter/free` route and Cloudflare Workers AI's Gemma 4, GLM 4.7 Flash, and
+Nemotron 3 models. OpenRouter currently limits free keys to 20 requests/minute and 50/day.
+Cloudflare provides 10,000 Neurons per day on its free plan; some models require a paid
+plan, so check the live model catalog before pinning one. Only Gemma 4 is configured for
+image input on Cloudflare. Video/audio remain Gemini-only.
+
 ## Testing
 
 ```bash
@@ -417,8 +432,6 @@ client — no network calls or real API keys required.
   `services/support/ai/*` directly still need to be migrated to call this service over
   HTTP (likely via a thin client library). Not part of this repo.
 - No hot-reload of `config/models.yaml` — restart the service after editing it.
-- Only the `Provider` interface + Gemini implementation exist; a second provider
-  (Anthropic, etc.) is future work.
 - `/v1/generate/media/url` and batch jobs' `media_urls` have no private-IP/SSRF
   allowlist — they trust callers to the same degree as the rest of the gateway. Add
   DNS-resolve + reject-private-ranges (`app/media_fetch.py`) before exposing either to
@@ -430,6 +443,10 @@ client — no network calls or real API keys required.
   hash to avoid it, not done since crash-mid-item is rare.
 
 ## Recent changes
+
+- **Add free inference options**: OpenRouter's free-model router and Cloudflare Workers
+  AI are configurable alongside Groq, Cerebras, and Mistral, using independent provider
+  key pools and model routing.
 
 - **Abort sync generate on client disconnect + batch job cancel endpoint**
   (2026-08-05): sync `/v1/generate` (and `/v1/generate/media[/url]`) now stops burning

@@ -62,7 +62,12 @@ async def lifespan(app: FastAPI):
 
     redis_client = get_redis()
     rk = RedisKeys(settings.redis_key_prefix)
-    registry = ProviderRegistry(settings.models_config_path)
+    if settings.cloudflare_api_keys and not settings.cloudflare_account_id:
+        raise ValueError("CLOUDFLARE_ACCOUNT_ID is required when CLOUDFLARE_API_KEYS is set.")
+    registry = ProviderRegistry(
+        settings.models_config_path,
+        cloudflare_account_id=settings.cloudflare_account_id,
+    )
     usage_logger = UsageLogger(settings.log_dir, log_full_payloads=settings.log_full_payloads)
 
     pools: dict[str, AsyncAPIKeyPool] = {}
@@ -76,6 +81,8 @@ async def lifespan(app: FastAPI):
         "groq": settings.groq_api_keys,
         "cerebras": settings.cerebras_api_keys,
         "mistral": settings.mistral_api_keys,
+        "openrouter": settings.openrouter_api_keys,
+        "cloudflare": settings.cloudflare_api_keys,
     }
 
     for name in registry.names():

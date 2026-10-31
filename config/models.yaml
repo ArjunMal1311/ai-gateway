@@ -131,3 +131,32 @@ mistral:
     mistral-small-latest: {rpm: 2, tpm: 500000, rpd: -1}
     mistral-medium-latest: {rpm: 2, tpm: 500000, rpd: -1}
     mistral-large-latest: {rpm: 2, tpm: 500000, rpd: -1}
+
+# OpenRouter exposes automatically selected free models using openrouter/free. Its free
+# API keys are limited to 20 RPM and 50 requests/day (per account). Keep one key unless
+# keys belong to separate accounts; rotating keys from one account does not add quota.
+openrouter:
+  model_priority:
+    - openrouter/free
+  vision_models:
+    - openrouter/free
+  model_aliases:
+    free: openrouter/free
+  quota_table:
+    openrouter/free: {rpm: 20, tpm: -1, rpd: 50}
+
+cloudflare:
+  model_priority:
+    - '@cf/google/gemma-4-26b-a4b-it'
+    - '@cf/zai-org/glm-4.7-flash'
+    - '@cf/nvidia/nemotron-3-120b-a12b'
+  vision_models:
+    - '@cf/google/gemma-4-26b-a4b-it'
+  model_aliases:
+    gemma-4: '@cf/google/gemma-4-26b-a4b-it'
+    glm-flash: '@cf/zai-org/glm-4.7-flash'
+    nemotron-3: '@cf/nvidia/nemotron-3-120b-a12b'
+  quota_table:
+    '@cf/google/gemma-4-26b-a4b-it': {rpm: -1, tpm: -1, rpd: -1}
+    '@cf/zai-org/glm-4.7-flash': {rpm: -1, tpm: -1, rpd: -1}
+    '@cf/nvidia/nemotron-3-120b-a12b': {rpm: -1, tpm: -1, rpd: -1}
